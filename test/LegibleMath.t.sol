@@ -24,7 +24,8 @@ import {
     v,
     NotInteger,
     OutOfRange,
-    Overflow
+    Overflow,
+    LegibleMath
 } from "../lib/LegibleMath.sol";
 
 contract LegibleMathTest is Test {
@@ -139,5 +140,82 @@ contract LegibleMathTest is Test {
     // Helper wrapper to ensure revert depth is deeper than cheatcode
     function callLiterally(LM _f) public pure returns (int256) {
         return _f.literally();
+    }
+
+    // Tests for denominator range fix
+    function test_large_denominator_encoding() public pure {
+        // Create a fraction with denominator = 40000 (between 32767 and 65535)
+        // 1/40000 should now be valid after the fix
+        LM fraction = LM.wrap(uint32(1) << 16 | uint32(40000));
+
+        // Extract the numerator and denominator to verify
+        (int256 num, int256 den) = fraction.toFraction();
+
+        assertEq(num, 1, "Numerator should be 1");
+        assertEq(den, 40000, "Denominator should be 40000");
+    }
+
+    function test_max_denominator_encoding() public pure {
+        // Create a fraction with denominator = 65535 (maximum uint16 value)
+        LM fraction = LM.wrap(uint32(1) << 16 | uint32(65535));
+
+        // Extract the numerator and denominator to verify
+        (int256 num, int256 den) = fraction.toFraction();
+
+        assertEq(num, 1, "Numerator should be 1");
+        assertEq(den, 65535, "Denominator should be 65535");
+    }
+
+    function test_arithmetic_with_large_denominator() public pure {
+        // Test arithmetic operations with large denominators (> 32767)
+
+        // Create 1/40000
+        LM frac1 = LM.wrap(uint32(1) << 16 | uint32(40000));
+        // Create 1/1
+        LM frac2 = LM.wrap(uint32(1) << 16 | uint32(1));
+
+        // Calculate frac1 * frac2 = (1/40000) * (1/1) = 1/40000
+        LM result = frac1 * frac2;
+
+        // Extract and verify the result
+        (int256 num, int256 den) = result.toFraction();
+        assertEq(num, 1, "Numerator should be 1");
+        assertEq(den, 40000, "Denominator should be 40000");
+    }
+
+    function test_reduction_with_large_denominator() public pure {
+        // First use arithmetic operations to trigger reduction
+
+        // Create 5/8 and 1/5000
+        LM frac1 = LM.wrap((5 << 16) | 8);
+        LM frac2 = LM.wrap((1 << 16) | 5000);
+
+        // Calculate frac1 * frac2 = (5/8) * (1/5000) = 5/40000, should reduce to 1/8000
+        LM result = frac1 * frac2;
+
+        // Extract and verify results
+        (int256 num_out, int256 den_out) = result.toFraction();
+
+        assertEq(num_out, 1, "Numerator should be reduced to 1");
+        assertEq(den_out, 8000, "Denominator should be reduced to 8000");
+    }
+
+    function test_denominator_overflow_reverts() public {
+        // Try to create a fraction with denominator = 65536 (exceeds uint16 max)
+        // This should cause an Overflow error
+
+        // Create fractions that will cause overflow when multiplied
+        LM frac1 = LM.wrap((1 << 16) | 32768); // 1/32768
+        LM frac2 = LM.wrap((1 << 16) | 2); // 1/2
+
+        vm.expectRevert(abi.encodeWithSelector(Overflow.selector));
+        // Call through helper function to ensure proper call depth
+        this.multiplyFractions(frac1, frac2);
+    }
+
+    // Helper function to trigger overflow check
+    function multiplyFractions(LM frac1, LM frac2) public pure returns (LM) {
+        // This operation will try to create 1/65536, should throw Overflow
+        return frac1 * frac2;
     }
 }

@@ -4,7 +4,9 @@ pragma solidity ^0.8.24;
 /*──────────── 16‑bit signed numerator | 16‑bit unsigned denominator ──────────*/
 type LM is uint32;
 uint32  constant _DEN_MASK = 0xFFFF;
-int256  constant _LIM      = 32_767;
+int256  constant _NUM_MAX  = 32_767;
+int256  constant _NUM_MIN  = -32_768; // Minimum value of int16
+int256  constant _DEN_MAX  = 65_535;  // Maximum value of uint16
 
 /*─────────── custom errors ───────────*/
 error NotInteger(int256 num, int256 den);
@@ -26,7 +28,10 @@ function _gcd(int256 _x, int256 _y) pure returns (int256) {
 }
 
 function _encode(int256 _n, int256 _d) pure returns (LM) {
-    if (_d <= 0 || _d > _LIM || _n < -_LIM || _n > _LIM) revert Overflow();
+    // Denominator must be positive and within uint16 range (1 to 65535)
+    if (_d <= 0 || _d > _DEN_MAX) revert Overflow();
+    // Numerator must be within int16 range (-32768 to 32767)
+    if (_n < _NUM_MIN || _n > _NUM_MAX) revert Overflow();
     // pack a 16-bit signed numerator and 16-bit unsigned denominator into 32 bits
     // ensure shift occurs on a 32-bit value so bits are not truncated
     uint32 numBits = uint32(uint16(int16(_n)));
